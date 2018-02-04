@@ -4,13 +4,6 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
 import os
-from cycler import cycler
-
-plt.rc('text', usetex=True)
-plt.rc('font', family='serif')
-plt.rc('axes', prop_cycle=(cycler('color', ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']) +
-                           cycler('linestyle', ['-', '--', ':', '-.', '-', '--', ':', '-.'])))
-
 
 def pairplot(dataframe):
     g = sns.PairGrid(dataframe, diag_sharey=False)
@@ -30,6 +23,7 @@ FEATURES = [
     'mpg'
 ]
 
+
 def make_dataframe(X, y):
     df = pd.DataFrame(X[:,0:6])
     df[6] = y
@@ -43,10 +37,10 @@ def load_data(data_dir='hw1/hw1-data'):
     :param data_dir:
     :return: numpy arrays
     """
-    X_test = pd.read_csv(os.path.join(data_dir, 'X_test.csv'), header=None)
     X_train = pd.read_csv(os.path.join(data_dir, 'X_train.csv'), header=None)
-    y_test = pd.read_csv(os.path.join(data_dir, 'y_test.csv'), header=None)
+    X_test = pd.read_csv(os.path.join(data_dir, 'X_test.csv'), header=None)
     y_train = pd.read_csv(os.path.join(data_dir, 'y_train.csv'), header=None)
+    y_test = pd.read_csv(os.path.join(data_dir, 'y_test.csv'), header=None)
     return X_train.values, y_train.values, X_test.values, y_test.values
 
 
@@ -68,9 +62,12 @@ class RidgeRegression:
         assert y.shape[1] == 1
         N, D = X.shape
         regularized_pseude_inverse = np.matmul(np.linalg.inv(self.alpha * np.identity(D, dtype=np.float) + np.matmul(X.T, X)), X.T)
-        self.usv_ = np.linalg.svd(X)
+        #self.usv_ = np.linalg.svd(X)
         self.W_ = np.matmul(regularized_pseude_inverse, y)
-        self.df_ = np.trace(regularized_pseude_inverse)
+        #u, s, v = self.usv_
+        #print(np.sum(s**2/(self.alpha+s**2)))
+        self.df_ = np.trace(np.matmul(X, regularized_pseude_inverse))
+        #print(self.df_)
         return self
 
     @property
@@ -79,8 +76,8 @@ class RidgeRegression:
     @property
     def df(self): return self.df_
 
-    @property
-    def usv(self): return self.usv_
+    #@property
+    #def usv(self): return self.usv_
 
     def predict(self, X=None):
         """
@@ -98,6 +95,13 @@ class RidgeRegression:
         """
         assert X.shape[0] == y.shape[0]
         assert X.shape[1] == self.W.shape[0], 'Number of features in X must match'
+        print('predict', self.predict(X))
+        print('(self.predict(X) - y)', (self.predict(X) - y))
+        print('(self.predict(X) - y)**2', (self.predict(X) - y)**2)
+        print('np.sum((self.predict(X) - y)**2)', np.sum((self.predict(X) - y)**2))
+        print('y.shape[0]', y.shape[0])
+        print('np.sum((self.predict(X) - y)**2)/y.shape[0]', np.sum((self.predict(X) - y)**2)/y.shape[0])
+        print('np.sqrt(np.sum((self.predict(X) - y)**2)/y.shape[0])', np.sqrt(np.sum((self.predict(X) - y)**2)/y.shape[0]))
         return np.sqrt(np.sum((self.predict(X) - y)**2)/y.shape[0])
 
 
@@ -105,14 +109,14 @@ def compute_part1a(max_lambda, X_train, y_train):
     lambdas = np.linspace(0, max_lambda, num=max_lambda, endpoint=False)
     ws = np.zeros((max_lambda, 7))
     dfls = np.zeros(max_lambda)
-    dfls2 = np.zeros(max_lambda)
+    #dfls2 = np.zeros(max_lambda)
     for i in range(max_lambda):
         rr = RidgeRegression(lambdas[i]).fit(X_train, y_train)
         ws[i] = rr.W.reshape(-1)
         dfls[i] = rr.df
-        u, s, v = rr.usv
-        dfls2[i] = np.sum(s ** 2 / (lambdas[i] + s ** 2))
-    return lambdas, ws, dfls2, ['dim '+ str(i+1) for i in range(7)]
+        #u, s, v = rr.usv
+        #dfls2[i] = np.sum(s ** 2 / (lambdas[i] + s ** 2))
+    return lambdas, ws, dfls, ['dim '+ str(i+1) for i in range(7)]
 
 
 def plot_part1a(lambdas, weights, degrees_of_freedom, labels):
@@ -121,19 +125,19 @@ def plot_part1a(lambdas, weights, degrees_of_freedom, labels):
 
     ax = fig.add_subplot(gs[0, 0])
     ax.plot(lambdas, degrees_of_freedom)
-    ax.set_xlabel('$$\lambda$$')
-    ax.set_ylabel('$$df(\lambda)$$')
+    #ax.set_xlabel('$$\lambda$$')
+    #ax.set_ylabel('$$df(\lambda)$$')
 
     ax = fig.add_subplot(gs[1, 0])
     ax.plot(lambdas, weights)
-    ax.set_xlabel('$$\lambda$$')
-    ax.set_ylabel('$$w_{rr}$$')
+    #ax.set_xlabel('$$\lambda$$')
+    #ax.set_ylabel('$$w_{rr}$$')
 
     ax = fig.add_subplot(gs[:, 1:])
     for i in range(7):
         ax.plot(degrees_of_freedom, weights[:, i], label=labels[i])
-    ax.set_xlabel('$$df(\lambda)$$')
-    ax.set_ylabel('$$w_{rr}$$')
+    #ax.set_xlabel('$$df(\lambda)$$')
+    #ax.set_ylabel('$$w_{rr}$$')
     ax.legend(loc='lower left')
     fig.tight_layout()
 
@@ -147,10 +151,14 @@ def compute_part1c(max_lambda, X_train, y_train, X_test, y_test):
     lambdas = np.linspace(0, max_lambda, num=max_lambda, endpoint=False)
     rmse_train = np.zeros(max_lambda)
     rmse_test = np.zeros(max_lambda)
+
+    X_train_expanded = expand_features(X_train, 3)
+    X_test_expanded = expand_features(X_test, 3)
+
     for i in range(max_lambda):
-        rr = RidgeRegression(lambdas[i]).fit(X_train, y_train)
-        rmse_train[i] = rr.score(X_train, y_train)
-        rmse_test[i] = rr.score(X_test, y_test)
+        rr = RidgeRegression(lambdas[i]).fit(X_train_expanded, y_train)
+        rmse_train[i] = rr.score(X_train_expanded, y_train)
+        rmse_test[i] = rr.score(X_test_expanded, y_test)
     return lambdas, rmse_train, rmse_test
 
 
@@ -161,16 +169,18 @@ def plot_part1c(lambdas, rmse_train, rmse_test):
     ax = fig.add_subplot(gs[0, 0])
     ax.plot(lambdas, rmse_train, label='Train')
     ax.plot(lambdas, rmse_test, label='Test')
-    ax.set_xlabel('$$\lambda$$')
-    ax.set_ylabel('RMSE')
-    ax.legend()
+    #ax.set_xlabel('$$\lambda$$')
+    #ax.set_ylabel('RMSE')
+    #ax.legend()
 
-    fig.tight_layout()
+    #fig.tight_layout()
 
 
 def part1c():
     X_train, y_train, X_test, y_test = load_data('hw1/hw1-data')
-    plot_part1c(*compute_part1c(50, X_train, y_train, X_test, y_test))
+    results = compute_part1c(50, X_train, y_train, X_test, y_test)
+    print(results)
+    plot_part1c(*results)
 
 
 def expand_features(X_train, p):
@@ -211,7 +221,7 @@ def plot_part2a(lambdas, results):
         ax.set_title("p={}".format(subplot+1))
         ax.plot(lambdas, results[subplot][0], label="Train")
         ax.plot(lambdas, results[subplot][1], label='Test')
-        ax.set_xlabel('$$\lambda$$')
+        ax.set_xlabel(r'$$\lambda$$')
         ax.set_ylabel('RMSE')
         optimal_lambda = np.argmin(results[subplot][1])
         # ax.axvline(x=optimal_lambda, ymin=0, ymax=0.25, color='red')
