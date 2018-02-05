@@ -98,11 +98,11 @@ class RidgeRegression:
         """
         :param X:
         :param y:
-        :return: Mean Squared Error == (RMSE)**2
+        :return: Root Mean Squared Error (RMSE)
         """
         assert X.shape[0] == y.shape[0]
         assert X.shape[1] == self.W.shape[0], 'Number of features in X must match'
-        return np.sum((self.predict(X) - y)**2)/y.shape[0]
+        return np.sqrt(np.sum((self.predict(X) - y)**2)/y.shape[0])
 
 
 def compute_part1a(max_lambda, X_train, y_train):
@@ -146,25 +146,25 @@ def part1a():
 
 def compute_part1c(max_lambda, X_train, y_train, X_test, y_test):
     lambdas = np.linspace(0, max_lambda, num=max_lambda, endpoint=False)
-    mse_train = np.zeros(max_lambda)
-    mse_test = np.zeros(max_lambda)
+    rmse_train = np.zeros(max_lambda)
+    rmse_test = np.zeros(max_lambda)
 
     for i in range(max_lambda):
         rr = RidgeRegression(lambdas[i]).fit(X_train, y_train)
-        mse_train[i] = rr.score(X_train, y_train)
-        mse_test[i] = rr.score(X_test, y_test)
-    return lambdas, mse_train, mse_test
+        rmse_train[i] = rr.score(X_train, y_train)
+        rmse_test[i] = rr.score(X_test, y_test)
+    return lambdas, rmse_train, rmse_test
 
 
-def plot_part1c(lambdas, mse_train, mse_test):
+def plot_part1c(lambdas, rmse_train, rmse_test):
     fig = plt.figure(figsize=(8, 3))
     gs = gridspec.GridSpec(1, 1)
 
     ax = fig.add_subplot(gs[0, 0])
-    ax.plot(lambdas, mse_train, label='Train MSE')
-    ax.plot(lambdas, mse_test, label='Test MSE')
+    ax.plot(lambdas, rmse_train, label='Train RMSE')
+    ax.plot(lambdas, rmse_test, label='Test RMSE')
     ax.set_xlabel('lambda')
-    ax.set_ylabel('MSE')
+    ax.set_ylabel('RMSE')
     ax.legend()
 
     fig.tight_layout()
@@ -185,42 +185,42 @@ def expand_features(X_train, p):
     return np.hstack((X, np.ones([N, 1], dtype=np.float)))
 
 
-def compute_part2a(max_lambda, max_p, X_train, y_train, X_test, y_test):
+def compute_part2d(max_lambda, max_p, X_train, y_train, X_test, y_test):
     lambdas = np.linspace(0, max_lambda, num=max_lambda, endpoint=False)
     result = []
     for p in range(1, max_p+1):
-        mse_train = np.zeros(max_lambda)
-        mse_test = np.zeros(max_lambda)
+        rmse_train = np.zeros(max_lambda)
+        rmse_test = np.zeros(max_lambda)
         X_train_expanded = expand_features(X_train, p)
         X_test_expanded = expand_features(X_test, p)
         for i in range(max_lambda):
             rr = RidgeRegression(lambdas[i]).fit(X_train_expanded, y_train)
-            mse_train[i] = rr.score(X_train_expanded, y_train)
-            mse_test[i] = rr.score(X_test_expanded, y_test)
-        result.append((mse_train, mse_test))
+            rmse_train[i] = rr.score(X_train_expanded, y_train)
+            rmse_test[i] = rr.score(X_test_expanded, y_test)
+        result.append((rmse_train, rmse_test))
     return lambdas, result
 
 
-def plot_part2a(lambdas, results):
+def plot_part2d(lambdas, results):
     fig = plt.figure(figsize=(8, 9))
     gs = gridspec.GridSpec(len(results), 1)
 
     for subplot in range(3):
         ax = fig.add_subplot(gs[subplot, 0])
         ax.set_title("Polynomial order ={}".format(subplot+1))
-        ax.plot(lambdas, results[subplot][0], label='Train MSE')
-        ax.plot(lambdas, results[subplot][1], label='Test MSE')
+        ax.plot(lambdas, results[subplot][0], label='Train RMSE')
+        ax.plot(lambdas, results[subplot][1], label='Test RMSE')
         ax.set_xlabel('lambda')
-        ax.set_ylabel('MSE')
+        ax.set_ylabel('RMSE')
         optimal_lambda = np.argmin(results[subplot][1])
-        ax.annotate("{}".format(optimal_lambda),
+        ax.annotate("lambda={}, RMSE={:.4}".format(optimal_lambda, results[subplot][1][optimal_lambda]),
                     xy=(optimal_lambda, results[subplot][1][optimal_lambda]), xycoords='data',
-                    xytext=(optimal_lambda, results[subplot][1][optimal_lambda] + 2.5), textcoords='data',
+                    xytext=(optimal_lambda, results[subplot][1][optimal_lambda] + 0.5), textcoords='data',
                     arrowprops=dict(facecolor='red', arrowstyle='->'))
         ax.legend()
     fig.tight_layout()
 
 
-def part2a():
+def part2d():
     X_train, y_train, X_test, y_test = load_data('hw1/hw1-data')
-    plot_part2a(*compute_part2a(500, 3, X_train, y_train, X_test, y_test))
+    plot_part2d(*compute_part2d(500, 3, X_train, y_train, X_test, y_test))
