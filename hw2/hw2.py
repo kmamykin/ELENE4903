@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from IPython.display import display
 
 
@@ -96,3 +97,27 @@ def problem_2_part_a():
     classifier = NaiveBayes()
     predictions = classifier.fit(X_train, y_train).predict(X_test)
     display_confusion_matrix(confusion_matrix(y_test, predictions))
+
+
+def problem_2_part_b():
+    """
+    Plot a stem plot to display differences in learned Bernoulli parameters for each feature (word)
+    :return: None
+    """
+    X_train, y_train, X_test, y_test = load_data(data_dir='./hw2/hw2-data')
+    classifier = NaiveBayes()
+    theta = classifier.fit(X_train, y_train).bern_theta
+    feat_idx = np.arange(54) + 1
+    fig = plt.figure(figsize=(14, 3))
+
+    markerline, stemlines, baseline = plt.stem(feat_idx, theta[0], linefmt=':')
+    plt.setp(markerline, color='b')
+    plt.setp(stemlines, color='black', linewidth=1, linestyle='-')
+
+    markerline, stemlines, baseline = plt.stem(feat_idx, theta[1], linefmt='-')
+    plt.setp(markerline, color='r')
+    plt.setp(stemlines, color='black', linewidth=1, linestyle='-')
+
+    plt.xlim(0, 55)
+
+    plt.show()
