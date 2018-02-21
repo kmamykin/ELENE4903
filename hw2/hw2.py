@@ -171,19 +171,26 @@ class KNNClassifier(object):
         self.y_train = y
         return self
 
-    def predict(self, X):
+    def nearest_neighbours(self, X):
         # calculate distance to each training example
         distances = fast_cartesian_product_eval(self.X_train, X, self.distance)
-        # sort and select top k examples
-        top_k_indices = np.argsort(distances, axis=1)[:,:self.k]
-        # pick predicted class label and break ties
-        return majority_vote(self.y_train[top_k_indices])
+        # sort neighbours by distance
+        return np.argsort(distances, axis=1)
+
+    def nearest_label(self, neighbours, k):
+        # select top k examples and pick predicted class label
+        return majority_vote(self.y_train[neighbours[:,:k]])
+
+    def predict(self, X):
+        neighbours = self.nearest_neighbours(self, X)
+        return self.nearest_label(neighbours, self.k)
 
 
 def plot_accuracy(ks, accuracies):
     plt.figure(figsize=(10, 3))
     plt.title('k-NN accuracy vs k')
     plt.plot(ks, accuracies)
+    plt.xticks(ks)
     plt.show()
 
 
@@ -191,7 +198,9 @@ def problem_2_part_c():
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw2/hw2-data')
     ks = np.linspace(start=1, stop=20, num=20, dtype=np.int)
     accuracies = np.zeros(ks.shape)
+    classifier = KNNClassifier().fit(X_train, y_train)
+    # Optimization: do not need to re-calculate distances matrix for each k
+    neighbours = classifier.nearest_neighbours(X_test)
     for i, k in enumerate(ks):
-        predictions = KNNClassifier(k=k).fit(X_train, y_train).predict(X_test)
-        accuracies[i] = accuracy_metric(y_test, predictions)
+        accuracies[i] = accuracy_metric(y_test, classifier.nearest_label(neighbours, k))
     return ks, accuracies
