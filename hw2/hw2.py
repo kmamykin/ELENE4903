@@ -76,6 +76,10 @@ class NaiveBayes(object):
         return ((y_hat_0_log_p - y_hat_1_log_p) < 0).astype(int).reshape((-1, 1))
 
 
+def accuracy_metric(y_true, y_pred):
+    return 100.0 * np.sum(y_true == y_pred) / y_true.shape[0]
+
+
 def confusion_matrix(y_true, y_pred):
     return pd.DataFrame(np.array([
         np.count_nonzero(np.logical_and(y_true == 0, y_pred == 0)),
@@ -85,18 +89,14 @@ def confusion_matrix(y_true, y_pred):
     ]).reshape((2, 2)), index=['True 0', 'True 1'], columns=['Predicted 0', 'Predicted 1'])
 
 
-def display_confusion_matrix(confusion_matrix):
-    display(confusion_matrix)
-    accuracy = 100.0 * np.sum(confusion_matrix.values * np.eye(2)) / np.sum(confusion_matrix.values)
-    print("Accuracy: {0:.2f}".format(accuracy))
-
-
 def problem_2_part_a():
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw2/hw2-data')
     # print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
     classifier = NaiveBayes()
     predictions = classifier.fit(X_train, y_train).predict(X_test)
-    display_confusion_matrix(confusion_matrix(y_test, predictions))
+    display(confusion_matrix(y_test, predictions))
+    print("Accuracy: {0:.2f}".format(accuracy_metric(y_test, predictions)))
+
 
 
 def problem_2_part_b():
@@ -121,3 +121,77 @@ def problem_2_part_b():
     plt.xlim(0, 55)
 
     plt.show()
+
+
+def l1_distance(x1, x2):
+    """
+    Calculated distance between a pair of observations.
+    Simular observations get a small distance value (large similarity), large distance value means small similarity.
+    :param x1:
+    :param x2:
+    :return: distance (scalar)
+    """
+    # Here we are disregarding the features that follow Pareto distribution, they are scaled differently
+    # and kNN performs just fine without them. Possible improvement would be to normalize those features across dataset
+    return np.sum(np.abs(x1[:54]-x2[:54]))
+
+
+def fast_cartesian_product_eval(X, Y, binary_fn):
+    """
+    Performs fast evaluation of binary_fn on a cartesian product pairs of elements in X and Y.
+    The elements iterated must be in the outer most dimension.
+    :param X: numpy array shape (Nx, ...)
+    :param Y: numpy array shape (Ny, ...)
+    :param binary_fn: Function taking two parameters shaped like X and Y inner dimensions and returning a scalar
+    :return: Matrix (Nx, Ny) with values == binary_fn evaluated on the corresponding elements
+    """
+    # Convert a python function to something numpy can use to quickly iterate over darrays
+    vectorized_binary_fn = np.vectorize(binary_fn, signature='(i),(i)->()')
+    x_indices, y_indices = np.meshgrid(np.arange(X.shape[0]), np.arange(Y.shape[0]))
+    return vectorized_binary_fn(X[x_indices], Y[y_indices])
+
+
+def majority_vote(y_votes):
+    """
+    Get majority vote with breaking ties according to around (i.e. 0.5 will be treated as 0)
+    :param y_votes: shaped (n_instances, n_votes) with values {0,1}
+    :return: (n_instances,1) with values {0,1}
+    """
+    return np.around(np.average(y_votes, axis=1)).astype(dtype=np.int)
+
+
+class KNNClassifier(object):
+    def __init__(self, k=1, distance=l1_distance):
+        self.k = k
+        self.distance=distance
+
+    def fit(self, X, y):
+        # Just remember the training set
+        self.X_train = X
+        self.y_train = y
+        return self
+
+    def predict(self, X):
+        # calculate distance to each training example
+        distances = fast_cartesian_product_eval(self.X_train, X, self.distance)
+        # sort and select top k examples
+        top_k_indices = np.argsort(distances, axis=1)[:,:self.k]
+        # pick predicted class label and break ties
+        return majority_vote(self.y_train[top_k_indices])
+
+
+def plot_accuracy(ks, accuracies):
+    plt.figure(figsize=(10, 3))
+    plt.title('k-NN accuracy vs k')
+    plt.plot(ks, accuracies)
+    plt.show()
+
+
+def problem_2_part_c():
+    X_train, y_train, X_test, y_test = load_data(data_dir='./hw2/hw2-data')
+    ks = np.linspace(start=1, stop=20, num=20, dtype=np.int)
+    accuracies = np.zeros(ks.shape)
+    for i, k in enumerate(ks):
+        predictions = KNNClassifier(k=k).fit(X_train, y_train).predict(X_test)
+        accuracies[i] = accuracy_metric(y_test, predictions)
+    return ks, accuracies
