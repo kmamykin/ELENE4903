@@ -131,9 +131,9 @@ def l1_distance(x1, x2):
     :param x2:
     :return: distance (scalar)
     """
-    # Here we are disregarding the features that follow Pareto distribution, they are scaled differently
-    # and kNN performs just fine without them. Possible improvement would be to normalize those features across dataset
-    return np.sum(np.abs(x1[:54]-x2[:54]))
+    # Ideally we would be to normalize the features across dataset, for this assignment the last 3 features
+    # with Pareto distribution may overwhelm {0,1} of the Bernoulli features
+    return np.sum(np.abs(x1-x2))
 
 
 def fast_cartesian_product_eval(X, Y, binary_fn):
@@ -204,3 +204,90 @@ def problem_2_part_c():
     for i, k in enumerate(ks):
         accuracies[i] = accuracy_metric(y_test, classifier.nearest_label(neighbours, k))
     return ks, accuracies
+
+
+# def sigmoid(x):
+#     return np.exp(x)/(1 + np.exp(x))
+def sigmoid(x):
+    "Numerically-stable sigmoid function."
+    pos = np.where(x >=0, x, 0)
+    pos = 1 / (1 + np.exp(-pos))
+    # if x is less than zero then z will be small, denom can't be
+    # zero because it's 1+z.
+    neg = np.where(x < 0, x, 0)
+    z = np.exp(neg)
+    neg = z / (1 + z)
+    return pos + neg
+
+def extend_with_bias(x):
+    return np.hstack((x, np.ones((x.shape[0], 1))))
+
+
+class LogisticRegression(object):
+
+    def __init__(self, max_iterations, learning_rate_fn, progress_callback_fn):
+        self.max_iterations = max_iterations
+        self.learning_rate_fn = learning_rate_fn
+        self.progress_callback_fn = progress_callback_fn
+
+    def fit(self, X_train, y_train):
+        # Initialize training process
+        X = extend_with_bias(X_train)
+        N, D = X.shape
+        y = np.where(y_train == 1, 1, -1)
+        self.W = np.random.randn(D, 1)#np.zeros((D, 1))
+        print('y', y)
+        print('y', y.shape)
+        print('X', X.shape)
+        print('W', self.W.shape)
+        for iteration in range(self.max_iterations):
+            learning_rate = self.learning_rate_fn(iteration)
+            likelihoods = y*sigmoid(np.dot(X, self.W))
+            # print('likelihood', likelihoods.shape)
+            loss = np.sum(np.log(likelihoods)) # sum of log likelihoods
+            gradient = np.sum((1 - likelihoods) * y * X, axis=0).reshape(self.W.shape)
+            # print('gradient', (1 - likelihoods).shape, ((1 - likelihoods) * y).shape, ((1 - likelihoods) * y * X).shape, gradient.shape)
+            # update weights
+            self.W = self.W + learning_rate * gradient
+            self.progress_callback_fn(iteration, loss, self)
+        return self
+
+    def predict(self, X):
+        X = extend_with_bias(X)
+        return (sigmoid(np.dot(X, self.W)) > 0.5).astype(dtype=np.int)
+
+
+def problem_2_part_d():
+    X_train, y_train, X_test, y_test = load_data(data_dir='./hw2/hw2-data')
+    iterations = []
+    losses = []
+    train_accuracies = []
+    test_accuracies = []
+
+    def learning_rate(iteration):
+        return 1.0/(10e5*np.sqrt(iteration+1))
+
+    def record_progress(iteration, loss, classifier):
+        iterations.append(iteration)
+        losses.append(loss)
+        train_accuracies.append(accuracy_metric(y_train, classifier.predict(X_train)))
+        test_accuracies.append(accuracy_metric(y_test, classifier.predict(X_test)))
+
+    classifier = LogisticRegression(
+        max_iterations=10000,
+        learning_rate_fn=learning_rate,
+        progress_callback_fn=record_progress
+    ).fit(X_train, y_train)
+
+    return iterations, losses, train_accuracies, test_accuracies
+
+
+def plot_learning_progress(iterations, losses, train_accuracies, test_accuracies):
+    plt.figure(figsize=(10, 4))
+    plt.title('Learning progress')
+    plt.plot(iterations, losses, label='Loss')
+    plt.plot(iterations, train_accuracies, label='Train accuracy')
+    plt.plot(iterations, test_accuracies, label='Test accuracy')
+    plt.xlabel('Iteration')
+    plt.legend()
+    plt.show()
