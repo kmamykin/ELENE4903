@@ -1,9 +1,12 @@
 import os
+import unittest
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from IPython.display import display
+from scipy.special import expit  # This is only used to check our implementation of sigmoid
+from scipy import signal
 
 
 def load_data(data_dir='./hw2/hw2-data'):
@@ -63,8 +66,8 @@ class NaiveBayes(object):
         self.bern_theta = bern_theta
 
         pareto_theta = np.zeros([2, 3])
-        pareto_theta[0] = np.sum(class_0)/np.sum(np.log(pareto_feat[class_0, :]), axis=0)
-        pareto_theta[1] = np.sum(class_1)/np.sum(np.log(pareto_feat[class_1, :]), axis=0)
+        pareto_theta[0] = np.sum(class_0) / np.sum(np.log(pareto_feat[class_0, :]), axis=0)
+        pareto_theta[1] = np.sum(class_1) / np.sum(np.log(pareto_feat[class_1, :]), axis=0)
         self.pareto_theta = pareto_theta
         # print('pareto_theta', pareto_theta.shape)
         return self
@@ -77,7 +80,7 @@ class NaiveBayes(object):
 
 
 def accuracy_metric(y_true, y_pred):
-    return 100.0 * np.sum(y_true == y_pred) / y_true.shape[0]
+    return np.sum(y_true == y_pred) / y_true.shape[0]
 
 
 def confusion_matrix(y_true, y_pred):
@@ -95,8 +98,7 @@ def problem_2_part_a():
     classifier = NaiveBayes()
     predictions = classifier.fit(X_train, y_train).predict(X_test)
     display(confusion_matrix(y_test, predictions))
-    print("Accuracy: {0:.2f}".format(accuracy_metric(y_test, predictions)))
-
+    print("Accuracy: {0:.2f}".format(accuracy_metric(y_test, predictions)*100))
 
 
 def problem_2_part_b():
@@ -133,7 +135,7 @@ def l1_distance(x1, x2):
     """
     # Ideally we would be to normalize the features across dataset, for this assignment the last 3 features
     # with Pareto distribution may overwhelm {0,1} of the Bernoulli features
-    return np.sum(np.abs(x1-x2))
+    return np.sum(np.abs(x1 - x2))
 
 
 def fast_cartesian_product_eval(X, Y, binary_fn):
@@ -163,7 +165,7 @@ def majority_vote(y_votes):
 class KNNClassifier(object):
     def __init__(self, k=1, distance=l1_distance):
         self.k = k
-        self.distance=distance
+        self.distance = distance
 
     def fit(self, X, y):
         # Just remember the training set
@@ -179,7 +181,7 @@ class KNNClassifier(object):
 
     def nearest_label(self, neighbours, k):
         # select top k examples and pick predicted class label
-        return majority_vote(self.y_train[neighbours[:,:k]])
+        return majority_vote(self.y_train[neighbours[:, :k]])
 
     def predict(self, X):
         neighbours = self.nearest_neighbours(self, X)
@@ -206,18 +208,19 @@ def problem_2_part_c():
     return ks, accuracies
 
 
-# def sigmoid(x):
-#     return np.exp(x)/(1 + np.exp(x))
 def sigmoid(x):
     "Numerically-stable sigmoid function."
-    pos = np.where(x >=0, x, 0)
-    pos = 1 / (1 + np.exp(-pos))
-    # if x is less than zero then z will be small, denom can't be
-    # zero because it's 1+z.
-    neg = np.where(x < 0, x, 0)
-    z = np.exp(neg)
-    neg = z / (1 + z)
-    return pos + neg
+    is_positive = x >= 0
+    positives = np.where(is_positive, x, -1*x)
+    positives_sigmoid = 1 / (1 + np.exp(-positives))
+    return np.where(is_positive, positives_sigmoid, 1 - positives_sigmoid)
+    # Another implementation tried (it has more operations and slightly less performant)
+    # x = np.clip(x, -709, 709)
+    # positive = x >= 0
+    # positive_sigmoid = np.where(positive, 1 / (1 + np.exp(-x)), 0)
+    # negative_sigmoid = np.where(~positive, np.exp(x) / (1 + np.exp(x)), 0)
+    # return np.where(positive, positive_sigmoid, negative_sigmoid)
+
 
 def extend_with_bias(x):
     return np.hstack((x, np.ones((x.shape[0], 1))))
@@ -234,22 +237,24 @@ class LogisticRegression(object):
         # Initialize training process
         X = extend_with_bias(X_train)
         N, D = X.shape
+        # Convert y class labels vector from {0,1} to {-1,1}
         y = np.where(y_train == 1, 1, -1)
-        self.W = np.random.randn(D, 1)#np.zeros((D, 1))
-        print('y', y)
-        print('y', y.shape)
-        print('X', X.shape)
-        print('W', self.W.shape)
+        self.W = np.zeros((D, 1))  # np.random.randn(D, 1) * 0.01
+        # print('y', y)
+        # print('y', y.shape)
+        # print('X', X.shape)
+        # print('W', self.W.shape)
         for iteration in range(self.max_iterations):
             learning_rate = self.learning_rate_fn(iteration)
-            likelihoods = y*sigmoid(np.dot(X, self.W))
+            likelihoods = sigmoid(y * np.dot(X, self.W)) # (n, 1)
             # print('likelihood', likelihoods.shape)
-            loss = np.sum(np.log(likelihoods)) # sum of log likelihoods
+            # We are maximizing the reward in this homework instead of minimizing the cost as often defined
+            objective = np.sum(np.log(likelihoods + 1e-10))  # sum of log likelihoods (scalar)
             gradient = np.sum((1 - likelihoods) * y * X, axis=0).reshape(self.W.shape)
             # print('gradient', (1 - likelihoods).shape, ((1 - likelihoods) * y).shape, ((1 - likelihoods) * y * X).shape, gradient.shape)
             # update weights
             self.W = self.W + learning_rate * gradient
-            self.progress_callback_fn(iteration, loss, self)
+            self.progress_callback_fn(iteration, objective, self)
         return self
 
     def predict(self, X):
@@ -260,16 +265,16 @@ class LogisticRegression(object):
 def problem_2_part_d():
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw2/hw2-data')
     iterations = []
-    losses = []
+    objectives = []
     train_accuracies = []
     test_accuracies = []
 
     def learning_rate(iteration):
-        return 1.0/(10e5*np.sqrt(iteration+1))
+        return 1.0 / (10e5 * np.sqrt(iteration + 1))
 
-    def record_progress(iteration, loss, classifier):
+    def record_progress(iteration, objective, classifier):
         iterations.append(iteration)
-        losses.append(loss)
+        objectives.append(objective)
         train_accuracies.append(accuracy_metric(y_train, classifier.predict(X_train)))
         test_accuracies.append(accuracy_metric(y_test, classifier.predict(X_test)))
 
@@ -279,15 +284,51 @@ def problem_2_part_d():
         progress_callback_fn=record_progress
     ).fit(X_train, y_train)
 
-    return iterations, losses, train_accuracies, test_accuracies
+    return np.array(iterations), np.array(objectives), np.array(train_accuracies), np.array(test_accuracies)
 
 
-def plot_learning_progress(iterations, losses, train_accuracies, test_accuracies):
-    plt.figure(figsize=(10, 4))
-    plt.title('Learning progress')
-    plt.plot(iterations, losses, label='Loss')
-    plt.plot(iterations, train_accuracies, label='Train accuracy')
-    plt.plot(iterations, test_accuracies, label='Test accuracy')
-    plt.xlabel('Iteration')
-    plt.legend()
+def smooth(x):
+    window = signal.hann(11)
+    left_padding_value, right_padding_value = np.average(x[:5]), np.average(x[-5:])
+    padded = np.concatenate((np.array([left_padding_value]*5), x, np.array([right_padding_value]*5)))
+    return signal.convolve(padded, window, mode='valid') / np.sum(window)
+
+
+def plot_learning_progress(iterations, objectives, train_accuracies, test_accuracies):
+    s = slice(0, -1)
+    plt.figure(figsize=(10, 5))
+    ax1 = plt.subplot(211)
+    ax1.set_title('Optimization objective')
+    ax1.plot(iterations, smooth(objectives), label='Objective')
+    ax1.legend()
+
+    ax2 = plt.subplot(212)
+    ax2.set_title('Accuracies')
+    ax2.plot(iterations[s], 100*smooth(train_accuracies)[s], label='Train accuracy (smoothed)')
+    # ax2.plot(iterations[s], 100*train_accuracies[s], label='Train accuracy')
+    ax2.plot(iterations[s], 100*smooth(test_accuracies)[s], label='Test accuracy (smoothed)')
+    # ax2.plot(iterations[s], 100*test_accuracies[s], label='Test accuracy')
+    ax2.set_xlabel('Iteration')
+    ax2.legend()
     plt.show()
+
+
+
+
+class TestFunctions(unittest.TestCase):
+    def setUp(self):
+        self.inputs = np.array([-710, -709, -10., -6., -2., 0, 2., 6., 10., 709, 710])
+        self.expected = np.array([0, 0, 0.000045, 0.002473, 0.119203, 0.5, 0.880797, 0.9975274, 0.9999546, 1.0, 1.0])
+
+    def test_sigmoid_with_expit(self):
+        np.testing.assert_allclose(sigmoid(self.inputs), expit(self.inputs), atol=1e-06)
+
+    def test_sigmoid_for_known_values(self):
+        np.testing.assert_allclose(sigmoid(self.inputs), self.expected, atol=1e-06)
+
+    def test_expit_for_known_values(self):
+        np.testing.assert_allclose(expit(self.inputs), self.expected, atol=1e-06)
+
+
+if __name__ == '__main__':
+    unittest.main()
