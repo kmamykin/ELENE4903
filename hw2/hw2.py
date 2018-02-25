@@ -17,6 +17,19 @@ def load_data(data_dir='./hw2/hw2-data'):
     return X_train.values, y_train.values, X_test.values, y_test.values
 
 
+def smooth(x):
+    """
+    Smooth a series with a moving average (simple). Smoothing over the trailing values.
+    :param x: (n,)
+    :return: (n,)
+    """
+    window_size = 100  # average over 100 values
+    window = signal.boxcar(window_size)  # using simple average
+    window = window / np.sum(window)  # normalize the window so we don't change the scale of convolved series
+    averaged = signal.convolve(x, window, mode='valid') # convolved series will be smaller when using valid mode
+    return np.pad(averaged, pad_width=(window_size-1, 0), mode='edge')  # pad averaged on the left
+
+
 def class_selectors(y):
     """
     Return indices useful to select instances of different classes from the array of features
@@ -110,7 +123,7 @@ def problem_2_part_b():
     classifier = NaiveBayes()
     theta = classifier.fit(X_train, y_train).bern_theta
     feat_idx = np.arange(54) + 1
-    fig = plt.figure(figsize=(14, 3))
+    plt.figure(figsize=(14, 3))
 
     markerline, stemlines, baseline = plt.stem(feat_idx, theta[0], linefmt=':')
     plt.setp(markerline, color='b')
@@ -209,11 +222,11 @@ def problem_2_part_c():
 
 
 def sigmoid(x):
-    "Numerically-stable sigmoid function."
+    """Numerically-stable sigmoid function."""
     is_positive = x >= 0
-    positives = np.where(is_positive, x, -1*x)
-    positives_sigmoid = 1 / (1 + np.exp(-positives))
-    return np.where(is_positive, positives_sigmoid, 1 - positives_sigmoid)
+    positives = np.abs(x)
+    probabilities = 1 / (1 + np.exp(-positives))
+    return np.where(is_positive, probabilities, 1 - probabilities)
     # Another implementation tried (it has more operations and slightly less performant)
     # x = np.clip(x, -709, 709)
     # positive = x >= 0
@@ -287,27 +300,26 @@ def problem_2_part_d():
     return np.array(iterations), np.array(objectives), np.array(train_accuracies), np.array(test_accuracies)
 
 
-def smooth(x):
-    window = signal.hann(11)
-    left_padding_value, right_padding_value = np.average(x[:5]), np.average(x[-5:])
-    padded = np.concatenate((np.array([left_padding_value]*5), x, np.array([right_padding_value]*5)))
-    return signal.convolve(padded, window, mode='valid') / np.sum(window)
-
-
 def plot_learning_progress(iterations, objectives, train_accuracies, test_accuracies):
     s = slice(0, -1)
     plt.figure(figsize=(10, 5))
     ax1 = plt.subplot(211)
     ax1.set_title('Optimization objective')
-    ax1.plot(iterations, smooth(objectives), label='Objective')
+    ax1.plot(iterations, objectives, label='Objective')
     ax1.legend()
 
+    train_accuracies_smoothed = smooth(train_accuracies)
+    test_accuracies_smoothed = smooth(test_accuracies)
     ax2 = plt.subplot(212)
     ax2.set_title('Accuracies')
-    ax2.plot(iterations[s], 100*smooth(train_accuracies)[s], label='Train accuracy (smoothed)')
-    # ax2.plot(iterations[s], 100*train_accuracies[s], label='Train accuracy')
-    ax2.plot(iterations[s], 100*smooth(test_accuracies)[s], label='Test accuracy (smoothed)')
-    # ax2.plot(iterations[s], 100*test_accuracies[s], label='Test accuracy')
+    ax2.plot(iterations, 100*train_accuracies_smoothed, label='Train accuracy (smoothed)')
+    # ax2.plot(iterations[s], 100*train_accuracies, label='Train accuracy')
+    ax2.plot(iterations, 100*test_accuracies_smoothed, label='Test accuracy (smoothed)')
+    # ax2.plot(iterations[s], 100*test_accuracies, label='Test accuracy')
+    ax2.annotate("Train: {0:.2f}\nTest: {0:.2f}".format(train_accuracies_smoothed[-1]*100, test_accuracies_smoothed[-1]*100),
+                 xy=(.8, .5),
+                 xycoords='axes fraction',
+                 arrowprops=None)
     ax2.set_xlabel('Iteration')
     ax2.legend()
     plt.show()
