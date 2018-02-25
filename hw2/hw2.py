@@ -125,16 +125,18 @@ def problem_2_part_b():
     theta = classifier.fit(X_train, y_train).bern_theta
     feat_idx = np.arange(54) + 1
     plt.figure(figsize=(14, 3))
+    plt.title('Bernoulli parameters for each class')
 
-    markerline, stemlines, baseline = plt.stem(feat_idx, theta[0], linefmt=':')
+    markerline, stemlines, baseline = plt.stem(feat_idx, theta[0], linefmt=':', label='Not spam')
     plt.setp(markerline, color='b')
     plt.setp(stemlines, color='black', linewidth=1, linestyle='-')
 
-    markerline, stemlines, baseline = plt.stem(feat_idx, theta[1], linefmt='-')
+    markerline, stemlines, baseline = plt.stem(feat_idx, theta[1], linefmt='-', label='Spam')
     plt.setp(markerline, color='r')
     plt.setp(stemlines, color='black', linewidth=1, linestyle='-')
 
     plt.xlim(0, 55)
+    plt.legend()
 
     plt.show()
 
@@ -205,8 +207,13 @@ class KNNClassifier(object):
 def plot_accuracy(ks, accuracies):
     plt.figure(figsize=(10, 3))
     plt.title('k-NN accuracy vs k')
-    plt.plot(ks, accuracies)
+    plt.plot(ks, 100*accuracies)
     plt.xticks(ks)
+    plt.annotate("Best accuracy: {0:.2f}".format(np.max(accuracies)*100),
+                 xy=(.4, .9),
+                 xycoords='axes fraction',
+                 arrowprops=None)
+
     plt.show()
 
 
@@ -219,7 +226,7 @@ def problem_2_part_c():
     neighbours = classifier.nearest_neighbours(X_test)
     for i, k in enumerate(ks):
         accuracies[i] = accuracy_metric(y_test, classifier.nearest_label(neighbours, k))
-    return ks, accuracies
+    plot_accuracy(ks, accuracies)
 
 
 def sigmoid(x):
