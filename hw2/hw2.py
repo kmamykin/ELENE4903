@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from IPython.display import display
+from numpy.linalg import inv
 from scipy.special import expit  # This is only used to check our implementation of sigmoid
 from scipy import signal
 
@@ -17,13 +18,13 @@ def load_data(data_dir='./hw2/hw2-data'):
     return X_train.values, y_train.values, X_test.values, y_test.values
 
 
-def smooth(x):
+def smooth(x, window_size=10):
     """
     Smooth a series with a moving average (simple). Smoothing over the trailing values.
     :param x: (n,)
+    :param window_size: int, size of the smoothing window
     :return: (n,)
     """
-    window_size = 100  # average over 100 values
     window = signal.boxcar(window_size)  # using simple average
     window = window / np.sum(window)  # normalize the window so we don't change the scale of convolved series
     averaged = signal.convolve(x, window, mode='valid') # convolved series will be smaller when using valid mode
@@ -239,11 +240,41 @@ def extend_with_bias(x):
     return np.hstack((x, np.ones((x.shape[0], 1))))
 
 
+def gradient_learning_rate(iteration):
+    return 1.0 / (10**5 * np.sqrt(iteration + 1))
+
+
+def gradient_optimizer(X, y, W):
+    likelihoods = sigmoid(y * np.dot(X, W)) # (n, 1)
+    objective = np.sum(np.log(likelihoods + 1e-10)) # sum of log likelihoods (scalar)
+    gradient = np.sum((1 - likelihoods) * y * X, axis=0).reshape(W.shape)
+    return objective, gradient
+
+
+def newton_learning_rate(iteration):
+    return 1.0 / np.sqrt(iteration + 1)
+
+
+def newton_optimizer(X, y, W):
+    likelihoods = sigmoid(y * np.dot(X, W)) # (n, 1)
+    objective = np.sum(np.log(likelihoods + 1e-10)) # sum of log likelihoods (scalar)
+    gradient = np.sum((1 - likelihoods) * y * X, axis=0).reshape(W.shape)
+    z = sigmoid(np.dot(X, W))
+    N, D = X.shape
+    hessian = np.zeros((N,D,D))
+    for i in range(N):
+        x = X[i].reshape([-1,1])
+        hessian[i] = z[i]*(1-z[i])*np.dot(x, x.T)
+    hessian = -1*np.sum(hessian, axis=0)
+    return objective, -1 * np.dot(inv(hessian), gradient)
+
+
 class LogisticRegression(object):
 
-    def __init__(self, max_iterations, learning_rate_fn, progress_callback_fn):
+    def __init__(self, max_iterations, method, progress_callback_fn):
         self.max_iterations = max_iterations
-        self.learning_rate_fn = learning_rate_fn
+        self.learning_rate_fn = newton_learning_rate if method == 'newton' else gradient_learning_rate
+        self.optimizer_fn = newton_optimizer if method == 'newton' else gradient_optimizer
         self.progress_callback_fn = progress_callback_fn
 
     def fit(self, X_train, y_train):
@@ -259,14 +290,11 @@ class LogisticRegression(object):
         # print('W', self.W.shape)
         for iteration in range(self.max_iterations):
             learning_rate = self.learning_rate_fn(iteration)
-            likelihoods = sigmoid(y * np.dot(X, self.W)) # (n, 1)
-            # print('likelihood', likelihoods.shape)
-            # We are maximizing the reward in this homework instead of minimizing the cost as often defined
-            objective = np.sum(np.log(likelihoods + 1e-10))  # sum of log likelihoods (scalar)
-            gradient = np.sum((1 - likelihoods) * y * X, axis=0).reshape(self.W.shape)
-            # print('gradient', (1 - likelihoods).shape, ((1 - likelihoods) * y).shape, ((1 - likelihoods) * y * X).shape, gradient.shape)
+            # We are maximizing the reward in this homework instead of minimizing the cost as often defined in literature
+            # so instead of calling this a cost or loss, we call this an objective
+            objective, update = self.optimizer_fn(X, y, self.W)
             # update weights
-            self.W = self.W + learning_rate * gradient
+            self.W = self.W + learning_rate * update
             self.progress_callback_fn(iteration, objective, self)
         return self
 
@@ -282,9 +310,6 @@ def train_logistic_regression(method, max_iterations):
     train_accuracies = []
     test_accuracies = []
 
-    def learning_rate(iteration):
-        return 1.0 / (10e5 * np.sqrt(iteration + 1))
-
     def record_progress(iteration, objective, classifier):
         iterations.append(iteration)
         objectives.append(objective)
@@ -294,23 +319,22 @@ def train_logistic_regression(method, max_iterations):
     classifier = LogisticRegression(
         max_iterations=max_iterations,
         method=method,
-        learning_rate_fn=learning_rate,
         progress_callback_fn=record_progress
     ).fit(X_train, y_train)
 
-    return np.array(iterations), np.array(objectives), np.array(train_accuracies), np.array(test_accuracies)
+    return np.array(iterations), np.array(objectives), np.array(train_accuracies), np.array(test_accuracies), method
 
 
-def plot_learning_progress(iterations, objectives, train_accuracies, test_accuracies):
-    s = slice(0, -1)
-    plt.figure(figsize=(10, 5))
+def plot_learning_progress(iterations, objectives, train_accuracies, test_accuracies, method):
+    plt.figure(figsize=(10, 10))
     ax1 = plt.subplot(211)
     ax1.set_title('Optimization objective')
     ax1.plot(iterations, objectives, label='Objective')
     ax1.legend()
-
-    train_accuracies_smoothed = smooth(train_accuracies)
-    test_accuracies_smoothed = smooth(test_accuracies)
+    # print(objectives[-10:])
+    smoothing_window = 3 if method == 'newton' else 100
+    train_accuracies_smoothed = smooth(train_accuracies, window_size=smoothing_window)
+    test_accuracies_smoothed = smooth(test_accuracies, window_size=smoothing_window)
     ax2 = plt.subplot(212)
     ax2.set_title('Accuracies')
     ax2.plot(iterations, 100*train_accuracies_smoothed, label='Train accuracy (smoothed)')
@@ -318,7 +342,7 @@ def plot_learning_progress(iterations, objectives, train_accuracies, test_accura
     ax2.plot(iterations, 100*test_accuracies_smoothed, label='Test accuracy (smoothed)')
     # ax2.plot(iterations[s], 100*test_accuracies, label='Test accuracy')
     ax2.annotate("Train: {0:.2f}\nTest: {0:.2f}".format(train_accuracies_smoothed[-1]*100, test_accuracies_smoothed[-1]*100),
-                 xy=(.8, .5),
+                 xy=(.5, .5),
                  xycoords='axes fraction',
                  arrowprops=None)
     ax2.set_xlabel('Iteration')
@@ -339,15 +363,30 @@ class TestFunctions(unittest.TestCase):
         self.inputs = np.array([-710, -709, -10., -6., -2., 0, 2., 6., 10., 709, 710])
         self.expected = np.array([0, 0, 0.000045, 0.002473, 0.119203, 0.5, 0.880797, 0.9975274, 0.9999546, 1.0, 1.0])
 
+    @unittest.skip('')
     def test_sigmoid_with_expit(self):
         np.testing.assert_allclose(sigmoid(self.inputs), expit(self.inputs), atol=1e-06)
 
+    @unittest.skip('')
     def test_sigmoid_for_known_values(self):
         np.testing.assert_allclose(sigmoid(self.inputs), self.expected, atol=1e-06)
 
+    @unittest.skip('')
     def test_expit_for_known_values(self):
         np.testing.assert_allclose(expit(self.inputs), self.expected, atol=1e-06)
 
+    def test_newton_optimizer(self):
+        X = np.array([
+            [1., 2.],
+            [2., 1.],
+            [1.1, 2.1],
+            [2.1, 1.1]])
+        y = np.array([1, -1, 1, -1]).reshape([-1, 1])
+        W = np.array([1., 1.]).reshape([-1, 1])
+        # print(X.shape, y.shape, W.shape)
+        objective, update = newton_optimizer(X, y, W)
+        np.testing.assert_allclose(objective, -6.3770, atol=1e-4)
+        np.testing.assert_allclose(update, [[ 15.652592],[-8.499538]], atol=1e-4)
 
 if __name__ == '__main__':
     unittest.main()
