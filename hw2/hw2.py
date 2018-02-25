@@ -275,7 +275,7 @@ class LogisticRegression(object):
         return (sigmoid(np.dot(X, self.W)) > 0.5).astype(dtype=np.int)
 
 
-def problem_2_part_d():
+def train_logistic_regression(method, max_iterations):
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw2/hw2-data')
     iterations = []
     objectives = []
@@ -292,7 +292,8 @@ def problem_2_part_d():
         test_accuracies.append(accuracy_metric(y_test, classifier.predict(X_test)))
 
     classifier = LogisticRegression(
-        max_iterations=10000,
+        max_iterations=max_iterations,
+        method=method,
         learning_rate_fn=learning_rate,
         progress_callback_fn=record_progress
     ).fit(X_train, y_train)
@@ -325,6 +326,12 @@ def plot_learning_progress(iterations, objectives, train_accuracies, test_accura
     plt.show()
 
 
+def problem_2_part_d():
+    plot_learning_progress(*train_logistic_regression('gradient', 10000))
+
+
+def problem_2_part_e():
+    plot_learning_progress(*train_logistic_regression('newton', 100))
 
 
 class TestFunctions(unittest.TestCase):
