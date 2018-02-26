@@ -342,19 +342,21 @@ def plot_learning_progress(iterations, objectives, train_accuracies, test_accura
     smoothing_window = 3 if method == 'newton' else 100
     train_accuracies_smoothed = smooth(train_accuracies, window_size=smoothing_window)
     test_accuracies_smoothed = smooth(test_accuracies, window_size=smoothing_window)
-    ax2 = plt.subplot(212)
-    ax2.set_title('Accuracies')
-    ax2.plot(iterations, 100*train_accuracies_smoothed, label='Train accuracy (smoothed)')
-    # ax2.plot(iterations[s], 100*train_accuracies, label='Train accuracy')
-    ax2.plot(iterations, 100*test_accuracies_smoothed, label='Test accuracy (smoothed)')
-    # ax2.plot(iterations[s], 100*test_accuracies, label='Test accuracy')
-    ax2.annotate("Train: {0:.2f}\nTest: {0:.2f}".format(train_accuracies_smoothed[-1]*100, test_accuracies_smoothed[-1]*100),
-                 xy=(.5, .5),
-                 xycoords='axes fraction',
-                 arrowprops=None)
-    ax2.set_xlabel('Iteration')
-    ax2.legend()
+    if method == 'newton':
+        ax2 = plt.subplot(212)
+        ax2.set_title('Accuracies')
+        ax2.plot(iterations, 100*train_accuracies_smoothed, label='Train accuracy (smoothed)')
+        # ax2.plot(iterations[s], 100*train_accuracies, label='Train accuracy')
+        ax2.plot(iterations, 100*test_accuracies_smoothed, label='Test accuracy (smoothed)')
+        # ax2.plot(iterations[s], 100*test_accuracies, label='Test accuracy')
+        ax2.annotate("Train: {:.2f}\nTest: {:.2f}".format(train_accuracies_smoothed[-1]*100, test_accuracies_smoothed[-1]*100),
+                     xy=(.5, .5),
+                     xycoords='axes fraction',
+                     arrowprops=None)
+        ax2.set_xlabel('Iteration')
+        ax2.legend()
     plt.show()
+    print("Test accuracy: {:.2f}".format(test_accuracies[-1]*100))
 
 
 def problem_2_part_d():
@@ -370,15 +372,15 @@ class TestFunctions(unittest.TestCase):
         self.inputs = np.array([-710, -709, -10., -6., -2., 0, 2., 6., 10., 709, 710])
         self.expected = np.array([0, 0, 0.000045, 0.002473, 0.119203, 0.5, 0.880797, 0.9975274, 0.9999546, 1.0, 1.0])
 
-    @unittest.skip('')
+    # @unittest.skip('')
     def test_sigmoid_with_expit(self):
         np.testing.assert_allclose(sigmoid(self.inputs), expit(self.inputs), atol=1e-06)
 
-    @unittest.skip('')
+    # @unittest.skip('')
     def test_sigmoid_for_known_values(self):
         np.testing.assert_allclose(sigmoid(self.inputs), self.expected, atol=1e-06)
 
-    @unittest.skip('')
+    # @unittest.skip('')
     def test_expit_for_known_values(self):
         np.testing.assert_allclose(expit(self.inputs), self.expected, atol=1e-06)
 
