@@ -1,10 +1,10 @@
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from numpy.linalg import inv
 from IPython.display import display
-import matplotlib.pyplot as plt
+from numpy.linalg import inv
 
 
 def load_data(data_dir):
@@ -17,6 +17,10 @@ def load_data(data_dir):
 
 def accuracy_metric(y_true, y_pred):
     return np.sum(y_true == y_pred) / y_true.shape[0]
+
+
+def error_metric(y_true, y_pred):
+    return np.sum(y_true != y_pred) / y_true.shape[0]
 
 
 def mrse_metric(y_pred, y_true):
@@ -81,22 +85,176 @@ def problem_1_part_b():
     msres = np.zeros([len(bs), len(variances)])
     for b_index, b in enumerate(bs):
         for v_index, v in enumerate(variances):
-            gp = GaussianProcess(X_train, y_train, kernel=gaussian(b=b),  sigma=np.sqrt(v))
+            gp = GaussianProcess(X_train, y_train, kernel=gaussian(b=b), sigma=np.sqrt(v))
             predictions = gp.mean(X_test)
             msres[b_index, v_index] = mrse_metric(predictions, y_test)
 
     table = pd.DataFrame(msres, index=["b={}".format(b) for b in bs], columns=["s^2={}".format(v) for v in variances])
     display(table)
 
+
 def problem_1_part_d():
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw3/hw3-data/gaussian_process')
-    X_one_dim = np.sort(X_train[:, 4].flatten()) # has to be sorted to make sense on the plot
-    gp = GaussianProcess(X_one_dim, y_train, kernel=gaussian(b=5),  sigma=np.sqrt(2))
+    X_one_dim = np.sort(X_train[:, 4].flatten())  # has to be sorted to make sense on the plot
+    gp = GaussianProcess(X_one_dim, y_train, kernel=gaussian(b=5), sigma=np.sqrt(2))
     predictions = gp.mean(X_one_dim).flatten()
     plt.figure(figsize=(16, 3))
-    plt.scatter(X_one_dim, y_train[:,0], color='blue')
-    plt.scatter(X_test[:, 4], y_test[:,0], color='red')
+    plt.scatter(X_one_dim, y_train[:, 0], color='blue')
+    plt.scatter(X_test[:, 4], y_test[:, 0], color='red')
     plt.plot(X_one_dim, predictions, color='black')
 
     # std = gp.std(X_one_dim)
     # plt.fill_between(X_one_dim, predictions - 2 * std, predictions + 2 * std, alpha=0.2, color='k')
+
+
+# ****************************** Problem 2 ************************************
+
+def extend_with_bias(x):
+    return np.hstack((x, np.ones((x.shape[0], 1))))
+
+
+def normalize(a):
+    return a / np.sum(a)
+
+
+def training_error_upper_bound(epsilons):
+    return np.exp(-2 * np.sum((0.5 - epsilons) ** 2))
+
+
+class LeastSquaresClassifier(object):
+
+    @staticmethod
+    def fit(X, y):
+        X = extend_with_bias(X)
+        W = np.dot(np.dot(inv(np.dot(X.T, X)), X.T), y)
+        return LeastSquaresClassifier(W)
+
+    def __init__(self, W):
+        self.W = W
+
+    def predict(self, X):
+        X = extend_with_bias(X)
+        return np.sign(np.dot(X, self.W))
+
+    def flip(self):
+        return LeastSquaresClassifier(-1 * self.W)
+
+
+class WeightedSampler(object):
+
+    @staticmethod
+    def initialize(n, X, y):
+        return WeightedSampler(n, normalize(np.ones([X.shape[0]])), X, y, np.array([], dtype=np.int))
+
+    def __init__(self, n, probabilities, X, y, sampled_indices):
+        self.n = n
+        self.probabilities = probabilities
+        self.X = X
+        self.y = y
+        self.sampled_indices = sampled_indices
+
+    def sample(self):
+        indices = np.random.choice(np.arange(self.X.shape[0]), size=self.n, p=self.probabilities, replace=True)
+        self.sampled_indices = np.append(self.sampled_indices, indices)
+        return self.X[indices], self.y[indices]
+
+    def weighted_error(self, misclassified: np.ndarray):
+        return np.sum(self.probabilities[misclassified.flatten()])
+
+    def rescaled(self, factors):
+        return WeightedSampler(self.n, normalize(self.probabilities * factors.flatten()), self.X, self.y,
+                               self.sampled_indices)
+
+    def histogram(self):
+        return np.bincount(self.sampled_indices)
+
+
+class AdaBoost(object):
+
+    def __init__(self, alphas=np.array([]), learners=np.array([])):
+        self.alphas = alphas
+        self.learners = learners
+
+    def boosted(self, alpha, learner):
+        return AdaBoost(np.append(self.alphas, [alpha]), np.append(self.learners, [learner]))
+
+    def predict(self, X):
+        predictions = np.array([learner.predict(X).flatten() for learner in self.learners])
+        # alphas reshaped (1, t), predictions will be (t, N),
+        return np.sign(np.dot(predictions.T, self.alphas.reshape((-1, 1))))
+
+
+def train_boosted_classifier(T):
+    X_train, y_train, X_test, y_test = load_data(data_dir='./hw3/hw3-data/boosting')
+    # print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
+
+    progress = pd.DataFrame(columns=['training_error', 'testing_error', 'learner_error', 'epsilon', 'alpha'])
+    N, _ = X_train.shape
+    sampler = WeightedSampler.initialize(N, X_train, y_train)
+    classifier = AdaBoost()
+    for t in range(T):
+        bootstrap_X, bootstrap_y = sampler.sample()
+        learner = LeastSquaresClassifier.fit(bootstrap_X, bootstrap_y)
+        learner_predictions = learner.predict(X_train)
+        learner_error = error_metric(learner_predictions, y_train)
+        if learner_error > 0.5:
+            learner = learner.flip()
+            learner_predictions = learner.predict(X_train)
+            learner_error = error_metric(learner_predictions, y_train)
+
+        # print('learner_predictions', learner_predictions.shape, learner_predictions[:10])
+        # print('y_train', y_train.shape, y_train[:10])
+        misclassified = learner_predictions != y_train
+        # print('misclassified', misclassified.shape, misclassified[:10])
+        epsilon = sampler.weighted_error(misclassified)
+        # print(epsilon)
+        alpha = 0.5 * np.log((1 - epsilon) / epsilon)
+        # print(alpha)
+        factors = np.exp(-1 * alpha * y_train * learner_predictions)
+        # print('factors', np.max(factors))
+        sampler = sampler.rescaled(factors)
+        classifier = classifier.boosted(alpha, learner)
+        # print(classifier.predict(X_train).shape)
+        # print(y_train.shape)
+        training_error = error_metric(classifier.predict(X_train), y_train)
+        testing_error = error_metric(classifier.predict(X_test), y_test)
+        values = [training_error, testing_error, learner_error, epsilon, alpha]
+        # print(values)
+        progress.loc[t] = values
+    return classifier, progress, sampler
+
+
+def problem_2_part_a(classifier, progress, sampler):
+    plt.figure(figsize=(16, 3))
+    plt.plot(progress['training_error'], color='blue', label='Training error')
+    plt.plot(progress['testing_error'], color='green', label='Testing error')
+    plt.legend()
+
+
+def problem_2_part_b(classifier, progress, sampler):
+    upper_bound = [training_error_upper_bound(progress.loc[:t, 'epsilon'].values) for t in
+                   range(progress['epsilon'].size)]
+    plt.figure(figsize=(16, 3))
+    plt.plot(range(progress['epsilon'].size), upper_bound, color='blue', label='Upper bound')
+    plt.legend()
+
+
+def problem_2_part_c(classifier, progress, sampler):
+    hist = sampler.histogram()
+    plt.figure(figsize=(16, 3))
+    markerline, stemlines, baseline = plt.stem(np.arange(hist.shape[0]), hist)
+    plt.setp(markerline, visible=False)
+    plt.setp(stemlines, color='blue', linewidth=1, linestyle='-')
+    plt.setp(baseline, visible=False)
+
+
+
+def problem_2_part_d(classifier, progress, sampler):
+    plt.figure(figsize=(16, 3))
+    plt.plot(progress['epsilon'], color='blue', label='Epsilon')
+    plt.plot(progress['alpha'], color='green', label='Alpha')
+    plt.legend()
+
+
+if __name__ == '__main__':
+    problem_2_part_a(*train_boosted_classifier(100))
