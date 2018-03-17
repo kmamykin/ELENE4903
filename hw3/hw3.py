@@ -15,27 +15,41 @@ def load_data(data_dir):
     return X_train.values, y_train.values, X_test.values, y_test.values
 
 
-def accuracy_metric(y_true, y_pred):
-    return np.sum(y_true == y_pred) / y_true.shape[0]
+# ****************************** Problem 1 ************************************
+
+def accuracy_metric(y_pred, y_true):
+    assert y_pred.shape == y_true.shape
+    return np.sum(y_pred == y_true) / y_true.shape[0]
 
 
-def error_metric(y_true, y_pred):
-    return np.sum(y_true != y_pred) / y_true.shape[0]
+def error_metric(y_pred, y_true):
+    return 1 - accuracy_metric(y_pred, y_true)
 
 
-def mrse_metric(y_pred, y_true):
-    return np.sqrt(np.sum((y_pred - y_true) ** 2) / y_true.shape[0])
+def rmse_metric(y_pred, y_true):
+    """Root Mean Square Error metric between predictions and ground truth"""
+    assert y_pred.shape == y_true.shape
+    n, _ = y_true.shape
+    return np.sqrt(np.sum((y_pred - y_true) ** 2) / n)
 
 
 def kernel(kernel_fn, signature='(i),(i)->()'):
+    """
+    Fast computation of the covariance matrix using numpy vectorized implementation
+    :param kernel_fn: binary function (x1, x2) -> R, where x1 and x2 are vectors
+    :param signature: numpy ufunc signature, default is for kernel params taking 1d arrays and producing a scalar
+    :return: A function to compute covariance matrix, (X(Nx,d), Y(Ny,d)) -> array (Nx, Ny)
+    """
     vectorized_kernel_fn = np.vectorize(kernel_fn, signature=signature)
 
     def _reshape(x):
         return x if x.ndim > 1 else x[:, np.newaxis]
 
     def covariance_matrix_computation(X, Y):
+        # Ensure X and Y are at least 2 dimensional
         X = _reshape(X)
         Y = _reshape(Y)
+        # Get indices for an element wise evaluation of the kernel fn
         x_indices, y_indices = np.meshgrid(np.arange(X.shape[0]), np.arange(Y.shape[0]), indexing='ij')
         return vectorized_kernel_fn(X[x_indices], Y[y_indices])
 
@@ -43,6 +57,11 @@ def kernel(kernel_fn, signature='(i),(i)->()'):
 
 
 def gaussian(b=1):
+    """
+    Gaussian kernel
+    :param b: length scale parameter
+    :return: Function to compute covariance matrix
+    """
     return kernel(lambda x1, x2: np.exp((-1 / b) * np.sum((x1 - x2) ** 2)))
 
 
@@ -75,21 +94,22 @@ def problem_1_part_a():
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw3/hw3-data/gaussian_process')
     gp = GaussianProcess(X_train, y_train, kernel=gaussian(b=10), sigma=0.01)
     predictions = gp.mean(X_test)
-    print("Test MRSE: {:.2f}".format(mrse_metric(predictions, y_test)))
+    print("Test RMSE: {:.2f}".format(rmse_metric(predictions, y_test)))
 
 
 def problem_1_part_b():
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw3/hw3-data/gaussian_process')
     bs = [5, 7, 9, 11, 13, 15]
     variances = [.1, .2, .3, .4, .5, .6, .7, .8, .9, 1]
-    msres = np.zeros([len(bs), len(variances)])
+    rmses = np.zeros([len(bs), len(variances)])
     for b_index, b in enumerate(bs):
         for v_index, v in enumerate(variances):
             gp = GaussianProcess(X_train, y_train, kernel=gaussian(b=b), sigma=np.sqrt(v))
             predictions = gp.mean(X_test)
-            msres[b_index, v_index] = mrse_metric(predictions, y_test)
+            rmses[b_index, v_index] = rmse_metric(predictions, y_test)
 
-    table = pd.DataFrame(msres, index=["b={}".format(b) for b in bs], columns=["s^2={}".format(v) for v in variances])
+    table = pd.DataFrame(rmses, index=["b={}".format(b) for b in bs],
+                         columns=["$\sigma^2$={}".format(v) for v in variances])
     display(table)
 
 
@@ -98,10 +118,12 @@ def problem_1_part_d():
     X_one_dim = np.sort(X_train[:, 4].flatten())  # has to be sorted to make sense on the plot
     gp = GaussianProcess(X_one_dim, y_train, kernel=gaussian(b=5), sigma=np.sqrt(2))
     predictions = gp.mean(X_one_dim).flatten()
-    plt.figure(figsize=(16, 3))
-    plt.scatter(X_one_dim, y_train[:, 0], color='blue')
-    plt.scatter(X_test[:, 4], y_test[:, 0], color='red')
+    plt.figure(figsize=(16, 8))
+    plt.title('Scatterplot of X[:,4],y and GP mean prediction')
+    plt.scatter(X_train[:, 4], y_train[:, 0], color='blue', label='Training')
+    # plt.scatter(X_test[:, 4], y_test[:, 0], color='red', label='Testing')
     plt.plot(X_one_dim, predictions, color='black')
+    plt.legend()
 
     # std = gp.std(X_one_dim)
     # plt.fill_between(X_one_dim, predictions - 2 * std, predictions + 2 * std, alpha=0.2, color='k')
@@ -125,6 +147,7 @@ class LeastSquaresClassifier(object):
 
     @staticmethod
     def fit(X, y):
+        """Trains and returns an instance of LS classifier"""
         X = extend_with_bias(X)
         W = np.dot(np.dot(inv(np.dot(X.T, X)), X.T), y)
         return LeastSquaresClassifier(W)
@@ -137,14 +160,25 @@ class LeastSquaresClassifier(object):
         return np.sign(np.dot(X, self.W))
 
     def flip(self):
+        """Flips vector W in the opposite direction and returns a LS classifier with that W"""
         return LeastSquaresClassifier(-1 * self.W)
 
 
-class WeightedSampler(object):
-
+class WeightedBootstrapSampler(object):
+    """
+    Class with ability to perform weighted sampling for a dataset
+    An instance keeps the weighted probabilities of each datapoint in the dataset.
+    It also keeps track of the frequencies that each datapoint that was selected over the course of the training process.
+    """
     @staticmethod
     def initialize(n, X, y):
-        return WeightedSampler(n, normalize(np.ones([X.shape[0]])), X, y, np.array([], dtype=np.int))
+        """
+        :param n: how many datapoints to sample, we use X's number of points
+        :param X: X for the full dataset
+        :param y: y for the full dataset
+        :return: an instance of sampler
+        """
+        return WeightedBootstrapSampler(n, normalize(np.ones([X.shape[0]])), X, y, np.array([], dtype=np.int))
 
     def __init__(self, n, probabilities, X, y, sampled_indices):
         self.n = n
@@ -154,58 +188,79 @@ class WeightedSampler(object):
         self.sampled_indices = sampled_indices
 
     def sample(self):
+        """
+        Samples the dataset according to the weights distribution for each point
+        :return: (Samples from X, Samples from y)
+        """
         indices = np.random.choice(np.arange(self.X.shape[0]), size=self.n, p=self.probabilities, replace=True)
         self.sampled_indices = np.append(self.sampled_indices, indices)
         return self.X[indices], self.y[indices]
 
     def weighted_error(self, misclassified: np.ndarray):
+        """Weighted error for misclassified datapoints"""
         return np.sum(self.probabilities[misclassified.flatten()])
 
     def rescaled(self, factors):
-        return WeightedSampler(self.n, normalize(self.probabilities * factors.flatten()), self.X, self.y,
-                               self.sampled_indices)
+        """Returns the sampler with re-scaled weight probabilities."""
+        return WeightedBootstrapSampler(self.n, normalize(self.probabilities * factors.flatten()), self.X, self.y,
+                                        self.sampled_indices)
 
     def histogram(self):
+        """
+        Aggregates counts of each datapoint at a particular index being sampled.
+        :return: (max(sampled_indices)+1) array of times each point was sampled.
+        """
         return np.bincount(self.sampled_indices)
 
 
-class AdaBoost(object):
+class AdaBoostEnsembleClassifier(object):
 
     def __init__(self, alphas=np.array([]), learners=np.array([])):
         self.alphas = alphas
         self.learners = learners
 
     def boosted(self, alpha, learner):
-        return AdaBoost(np.append(self.alphas, [alpha]), np.append(self.learners, [learner]))
+        return AdaBoostEnsembleClassifier(np.append(self.alphas, [alpha]), np.append(self.learners, [learner]))
 
     def predict(self, X):
-        predictions = np.array([learner.predict(X).flatten() for learner in self.learners])
-        # alphas reshaped (1, t), predictions will be (t, N),
-        return np.sign(np.dot(predictions.T, self.alphas.reshape((-1, 1))))
+        # Evaluate predictions of all learners
+        learner_predictions = np.hstack([learner.predict(X) for learner in self.learners])
+        # print('learner_predictions', learner_predictions.shape)
+        # print('self.alpha', self.alphas.shape)
+        # predictions will be (N, t), alphas reshaped (t, 1),
+        predictions = np.sign(np.dot(learner_predictions, self.alphas.reshape((-1, 1))))
+        # print('predictions', predictions.shape)
+        return predictions
 
 
 def train_boosted_classifier(T):
+    """
+    Trains an AdaBoost classifier
+    :param T: Number of iterations
+    :return: (classifier, DataFrame, sampler)
+    """
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw3/hw3-data/boosting')
     # print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
 
     progress = pd.DataFrame(columns=['training_error', 'testing_error', 'learner_error', 'epsilon', 'alpha'])
     N, _ = X_train.shape
-    sampler = WeightedSampler.initialize(N, X_train, y_train)
-    classifier = AdaBoost()
+    sampler = WeightedBootstrapSampler.initialize(N, X_train, y_train)
+    classifier = AdaBoostEnsembleClassifier()
     for t in range(T):
         bootstrap_X, bootstrap_y = sampler.sample()
-        learner = LeastSquaresClassifier.fit(bootstrap_X, bootstrap_y)
-        learner_predictions = learner.predict(X_train)
+        # print('Bootstrap:', bootstrap_X.shape, bootstrap_y.shape)
+        learner = LeastSquaresClassifier.fit(bootstrap_X, bootstrap_y) # train on bootstrapped data
+        learner_predictions = learner.predict(X_train) # predict on the original dataset
         learner_error = error_metric(learner_predictions, y_train)
-        if learner_error > 0.5:
+        if learner_error > 0.5: # if the learner did poorly, flip it to change all predictions to the opposites
             learner = learner.flip()
             learner_predictions = learner.predict(X_train)
             learner_error = error_metric(learner_predictions, y_train)
 
-        # print('learner_predictions', learner_predictions.shape, learner_predictions[:10])
-        # print('y_train', y_train.shape, y_train[:10])
+        # print('learner_predictions', learner_predictions.shape, learner_error)
+        # print('y_train', y_train.shape)
         misclassified = learner_predictions != y_train
-        # print('misclassified', misclassified.shape, misclassified[:10])
+        # print('misclassified', misclassified.shape)
         epsilon = sampler.weighted_error(misclassified)
         # print(epsilon)
         alpha = 0.5 * np.log((1 - epsilon) / epsilon)
@@ -246,7 +301,6 @@ def problem_2_part_c(classifier, progress, sampler):
     plt.setp(markerline, visible=False)
     plt.setp(stemlines, color='blue', linewidth=1, linestyle='-')
     plt.setp(baseline, visible=False)
-
 
 
 def problem_2_part_d(classifier, progress, sampler):
