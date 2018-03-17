@@ -225,11 +225,8 @@ class AdaBoostEnsembleClassifier(object):
     def predict(self, X):
         # Evaluate predictions of all learners
         learner_predictions = np.hstack([learner.predict(X) for learner in self.learners])
-        # print('learner_predictions', learner_predictions.shape)
-        # print('self.alpha', self.alphas.shape)
         # predictions will be (N, t), alphas reshaped (t, 1),
         predictions = np.sign(np.dot(learner_predictions, self.alphas.reshape((-1, 1))))
-        # print('predictions', predictions.shape)
         return predictions
 
 
@@ -240,7 +237,6 @@ def train_boosted_classifier(T):
     :return: (classifier, DataFrame, sampler)
     """
     X_train, y_train, X_test, y_test = load_data(data_dir='./hw3/hw3-data/boosting')
-    # print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
 
     progress = pd.DataFrame(columns=['training_error', 'testing_error', 'learner_error', 'epsilon', 'alpha'])
     N, _ = X_train.shape
@@ -248,33 +244,23 @@ def train_boosted_classifier(T):
     classifier = AdaBoostEnsembleClassifier()
     for t in range(T):
         bootstrap_X, bootstrap_y = sampler.sample()
-        # print('Bootstrap:', bootstrap_X.shape, bootstrap_y.shape)
         learner = LeastSquaresClassifier.fit(bootstrap_X, bootstrap_y) # train on bootstrapped data
         learner_predictions = learner.predict(X_train) # predict on the original dataset
         learner_error = error_metric(learner_predictions, y_train)
-        if learner_error > 0.5: # if the learner did poorly, flip it to change all predictions to the opposites
+        epsilon = sampler.weighted_error(learner_predictions != y_train)
+        if epsilon > 0.5: # if the learner did poorly, flip it to change all predictions to the opposites
             learner = learner.flip()
             learner_predictions = learner.predict(X_train)
             learner_error = error_metric(learner_predictions, y_train)
+            epsilon = sampler.weighted_error(learner_predictions != y_train)
 
-        # print('learner_predictions', learner_predictions.shape, learner_error)
-        # print('y_train', y_train.shape)
-        misclassified = learner_predictions != y_train
-        # print('misclassified', misclassified.shape)
-        epsilon = sampler.weighted_error(misclassified)
-        # print(epsilon)
         alpha = 0.5 * np.log((1 - epsilon) / epsilon)
-        # print(alpha)
         factors = np.exp(-1 * alpha * y_train * learner_predictions)
-        # print('factors', np.max(factors))
         sampler = sampler.rescaled(factors)
         classifier = classifier.boosted(alpha, learner)
-        # print(classifier.predict(X_train).shape)
-        # print(y_train.shape)
         training_error = error_metric(classifier.predict(X_train), y_train)
         testing_error = error_metric(classifier.predict(X_test), y_test)
         values = [training_error, testing_error, learner_error, epsilon, alpha]
-        # print(values)
         progress.loc[t] = values
     return classifier, progress, sampler
 
@@ -283,6 +269,8 @@ def problem_2_part_a(classifier, progress, sampler):
     plt.figure(figsize=(16, 3))
     plt.plot(progress['training_error'], color='blue', label='Training error')
     plt.plot(progress['testing_error'], color='green', label='Testing error')
+    plt.ylabel('Error')
+    plt.xlabel('Iteration')
     plt.legend()
 
 
@@ -292,6 +280,8 @@ def problem_2_part_b(classifier, progress, sampler):
     plt.figure(figsize=(16, 3))
     plt.plot(range(progress['epsilon'].size), upper_bound, color='blue', label='Upper bound')
     plt.legend()
+    plt.xlabel('Iteration')
+    
 
 
 def problem_2_part_c(classifier, progress, sampler):
@@ -301,6 +291,8 @@ def problem_2_part_c(classifier, progress, sampler):
     plt.setp(markerline, visible=False)
     plt.setp(stemlines, color='blue', linewidth=1, linestyle='-')
     plt.setp(baseline, visible=False)
+    plt.ylabel('Sampling Counts')
+    plt.xlabel('Observation index')
 
 
 def problem_2_part_d(classifier, progress, sampler):
@@ -308,6 +300,7 @@ def problem_2_part_d(classifier, progress, sampler):
     plt.plot(progress['epsilon'], color='blue', label='Epsilon')
     plt.plot(progress['alpha'], color='green', label='Alpha')
     plt.legend()
+    plt.xlabel('Iteration')
 
 
 if __name__ == '__main__':
