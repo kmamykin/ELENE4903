@@ -65,6 +65,7 @@ def plot_problem1_a(experiment):
         _, _, loss_history = experiment['K'][k]
         plt.plot(loss_history, label="K = {}".format(k))
     plt.title("K-means iterations loss")
+    plt.xticks(np.arange(20))
     plt.legend()
     plt.show()
 
