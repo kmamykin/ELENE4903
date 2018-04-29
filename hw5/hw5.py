@@ -42,6 +42,7 @@ def stationary_distribution(M):
     max_eval_idx = np.argmax(evals) # eigenvalues are not sorted
     eig_vec = np.real(evecs[:, max_eval_idx]).reshape((-1, 1)) # is a column vector
     eig_val = np.real(evals[max_eval_idx])
+    # print(np.flip(np.sort(evals)[-5:], axis=0))
     sdist = (eig_vec / np.sum(eig_vec)).reshape((1, -1)) # is a row vector
     assert np.allclose(M.T @ eig_vec, eig_val * eig_vec) # ensure proper eigen vector/value
     assert np.allclose(sdist @ M, sdist) # ensure proper stationary distribution
@@ -50,8 +51,7 @@ def stationary_distribution(M):
 
 def top_teams(teams, w, top=25):
     flat_w = w.flatten()
-    indices = np.argsort(flat_w)
-    indices = indices[::-1] # reverse
+    indices = np.flip(np.argsort(flat_w), axis=0) # in descending order now
     top_indices = indices[:top]
     return np.array(teams)[top_indices], flat_w[top_indices]
 
@@ -108,40 +108,43 @@ def load_word_frequency_matrix(data_dir='./hw5/hw5-data'):
     return matrix, vocab
 
 
-def plot_histogram(W, H):
-    fig, (ax1, ax2) = plt.subplots(1, 2)
-    ax1.hist(W, bins=100)
-    ax2.hist(H, bins=100)
-    plt.show()
-
 def divergence_objective(X, W, H):
     iidx, jidx, x = X.row, X.col, X.data
     wh = W @ H
-    print(x.shape, wh[iidx,jidx].shape)
-    print(x[:5], wh[iidx,jidx][:5])
-    plot_histogram(W, H)
+    # print(x.shape, wh[iidx,jidx].shape)
+    # print(x[:5], wh[iidx,jidx][:5])
     return np.sum(x*np.log(1/wh[iidx,jidx]) + wh[iidx,jidx])
 
 
-def nonnegative_matrix_factorization(X, rank, iterations):
-    N, M = X.shape
-    W = np.random.rand(N, rank)# + 1.0 # Uniform [1,2)
-    H = np.random.rand(rank, M)# + 1.0 # Uniform [1,2)
-    objectives = np.zeros(iterations)
-    for iteration in range(iterations):
-        purple = X.multiply(1 / (W @ H))
-        pink = W.T / np.sum(W.T, axis=1, keepdims=True)
-        H = H * (pink @ purple)
-        turquoise = H.T / np.sum(H.T, axis=0, keepdims=True)
-        W = W * (purple @ turquoise)
-        objectives[iteration] = divergence_objective(X, W, H)
-        print(objectives[iteration])
-    return W, H, objectives
+def h_update(X, W, H):
+    purple = X.multiply(1 / ((W @ H) + 1e-16))
+    pink = W.T / np.sum(W.T, axis=1, keepdims=True)
+    return H * (pink @ purple)
+
+
+def w_update(X, W, H):
+    purple = X.multiply(1 / ((W @ H) + 1e-16))
+    turquoise = H.T / np.sum(H.T, axis=0, keepdims=True)
+    return W * (purple @ turquoise)
 
 
 def normalize_w_h(W, H):
     a = np.sum(W, axis=0) # 1-D array
     return W / a.reshape((1, -1)), H * a.reshape((-1, 1))
+
+
+def nonnegative_matrix_factorization(X, rank, iterations):
+    N, M = X.shape
+    W = np.random.rand(N, rank) + 1.0 # Uniform [1,2)
+    H = np.random.rand(rank, M) + 1.0 # Uniform [1,2)
+    objectives = np.zeros(iterations)
+    for iteration in range(iterations):
+        H = h_update(X, W, H)
+        W = w_update(X, W, H)
+        objectives[iteration] = divergence_objective(X, W, H)
+        # print(objectives[iteration])
+    W, H = normalize_w_h(W, H)
+    return W, H, objectives
 
 
 def top_words_in_topics(W, top):
@@ -150,8 +153,7 @@ def top_words_in_topics(W, top):
 
 def nmf_experiment():
     X, vocab = load_word_frequency_matrix()
-    W, H, objectives = nonnegative_matrix_factorization(X, rank=25, iterations=10)
-    W, H = normalize_w_h(W, H)
+    W, H, objectives = nonnegative_matrix_factorization(X, rank=25, iterations=100)
     topic_words_idx = top_words_in_topics(W, top=10)
     topic_words = np.array(vocab)[topic_words_idx]
     return X, W, H, objectives, topic_words
