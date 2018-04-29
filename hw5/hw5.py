@@ -3,6 +3,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy import linalg
+from scipy import sparse
 
 import pandas as pd
 from IPython.display import display
@@ -55,23 +56,29 @@ def top_teams(teams, w, top=25):
     return np.array(teams)[top_indices], flat_w[top_indices]
 
 
+def make_report_columns(checkpoints):
+    return pd.MultiIndex.from_tuples([("t={}".format(i), l) for i in checkpoints for l in ['teams', 'p']])
+
+
 def markov_chain_experiment():
     teams, scores = read_scores_file(data_dir='./hw5/hw5-data')
     M = construct_transition_matrix(scores)
     N, _ = M.shape
     w_infinity = stationary_distribution(M)
-    checkpoint_iterations = [10, 100, 1000, 10000]
-    max_iterations = checkpoint_iterations[-1]
+    checkpoints = [10, 100, 1000, 10000]
+    max_iterations = checkpoints[-1]
     w = np.ones((1, N)) / N # Initial uniform distribution
-    team_rankings = pd.DataFrame(columns=["t={}".format(i) for i in checkpoint_iterations])
+    team_rankings = pd.DataFrame(columns=make_report_columns(checkpoints))
     norm_p1_trend = np.zeros(max_iterations)
     for t in range(1, max_iterations+1):
         w = w @ M
         assert np.allclose(np.sum(w), 1.0)
         norm_p1_trend[t-1] = linalg.norm(w - w_infinity, ord=1)
-        if t in checkpoint_iterations:
-            column = checkpoint_iterations.index(t)
-            team_rankings.iloc[:,column] = top_teams(teams, w, top=25)[0]
+        if t in checkpoints:
+            checkpoint_index = checkpoints.index(t)
+            check_teams, check_w = top_teams(teams, w, top=25)
+            team_rankings.iloc[:, checkpoint_index * 2] = check_teams
+            team_rankings.iloc[:, checkpoint_index * 2 + 1] = check_w
 
     # print(top_teams(teams, w, top=25))
     return dict(team_rankings=team_rankings, norm_p1_trend=norm_p1_trend)
@@ -83,3 +90,76 @@ def problem_1_a(experiment):
 
 def problem_1_b(experiment):
     plt.plot(experiment['norm_p1_trend'])
+
+
+
+# ************************** PROBLEM 1 (Non-negative Matrix Factorization) ******************
+
+
+def load_word_frequency_matrix(data_dir='./hw5/hw5-data'):
+    split_line = lambda line: [tuple(values.split(':')) for values in line.split(',')]
+    with open(os.path.join(data_dir, 'nyt_data.txt'), encoding='utf-8') as f:
+        lines = f.read().strip().split('\n')
+    a = [[int(word_cound), int(word_idx) - 1, doc_idx] for doc_idx, line in enumerate(lines) for word_idx, word_cound in split_line(line)]
+    data = np.array(a)
+    matrix = sparse.coo_matrix((data[:, 0], (data[:, 1], data[:, 2])))
+    with open(os.path.join(data_dir, 'nyt_vocab.dat'), encoding='utf-8') as f:
+        vocab = f.read().strip().split('\n')
+    return matrix, vocab
+
+
+def plot_histogram(W, H):
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    ax1.hist(W, bins=100)
+    ax2.hist(H, bins=100)
+    plt.show()
+
+def divergence_objective(X, W, H):
+    iidx, jidx, x = X.row, X.col, X.data
+    wh = W @ H
+    print(x.shape, wh[iidx,jidx].shape)
+    print(x[:5], wh[iidx,jidx][:5])
+    plot_histogram(W, H)
+    return np.sum(x*np.log(1/wh[iidx,jidx]) + wh[iidx,jidx])
+
+
+def nonnegative_matrix_factorization(X, rank, iterations):
+    N, M = X.shape
+    W = np.random.rand(N, rank)# + 1.0 # Uniform [1,2)
+    H = np.random.rand(rank, M)# + 1.0 # Uniform [1,2)
+    objectives = np.zeros(iterations)
+    for iteration in range(iterations):
+        purple = X.multiply(1 / (W @ H))
+        pink = W.T / np.sum(W.T, axis=1, keepdims=True)
+        H = H * (pink @ purple)
+        turquoise = H.T / np.sum(H.T, axis=0, keepdims=True)
+        W = W * (purple @ turquoise)
+        objectives[iteration] = divergence_objective(X, W, H)
+        print(objectives[iteration])
+    return W, H, objectives
+
+
+def normalize_w_h(W, H):
+    a = np.sum(W, axis=0) # 1-D array
+    return W / a.reshape((1, -1)), H * a.reshape((-1, 1))
+
+
+def top_words_in_topics(W, top):
+    return np.flip(np.argsort(W, axis=0)[-top:,:], axis=0)
+
+
+def nmf_experiment():
+    X, vocab = load_word_frequency_matrix()
+    W, H, objectives = nonnegative_matrix_factorization(X, rank=25, iterations=10)
+    W, H = normalize_w_h(W, H)
+    topic_words_idx = top_words_in_topics(W, top=10)
+    topic_words = np.array(vocab)[topic_words_idx]
+    return X, W, H, objectives, topic_words
+
+
+def problem_2_a(X, W, H, objectives, topic_words):
+    plt.plot(objectives)
+
+
+def problem_2_b(X, W, H, objectives, topic_words):
+    print(topic_words)
