@@ -147,21 +147,41 @@ def nonnegative_matrix_factorization(X, rank, iterations):
     return W, H, objectives
 
 
-def top_words_in_topics(W, top):
-    return np.flip(np.argsort(W, axis=0)[-top:,:], axis=0)
+def top_words_in_topics(W, vocab, top):
+    """
+    :param W:
+    :param top:
+    :return: (topics, word)
+    """
+    indices = np.transpose(np.flip(np.argsort(W, axis=0), axis=0)[:top, :])
+    return np.array(vocab)[indices]
 
 
 def nmf_experiment():
     X, vocab = load_word_frequency_matrix()
     W, H, objectives = nonnegative_matrix_factorization(X, rank=25, iterations=100)
-    topic_words_idx = top_words_in_topics(W, top=10)
-    topic_words = np.array(vocab)[topic_words_idx]
-    return X, W, H, objectives, topic_words
+    return X, vocab, W, H, objectives
 
 
-def problem_2_a(X, W, H, objectives, topic_words):
+def problem_2_a(X, vocab, W, H, objectives):
     plt.plot(objectives)
 
 
-def problem_2_b(X, W, H, objectives, topic_words):
-    print(topic_words)
+def problem_2_b(X, vocab, W, H, objectives):
+    pd.set_option('display.max_colwidth', 1000)
+    topic_words = top_words_in_topics(W, vocab, top=10)
+    table = pd.DataFrame(columns=np.arange(1, 6), index=np.arange(1, 6))
+    for i in range(5):
+        for j in range(5):
+            words = topic_words[i * 5 + j, :]
+            table.iloc[i,j] = ' '.join(words)
+    return table
+
+# def problem_2_b(X, vocab, W, H, objectives):
+#     topic_words = top_words_in_topics(W, vocab, top=10)
+#     table = pd.DataFrame(columns=np.arange(5), index=pd.MultiIndex.from_tuples([(i, j) for i in range(5) for j in range(10)]))
+#     for i in range(5):
+#         for j in range(5):
+#             words = topic_words[i * 5 + j, :]
+#             table.iloc[i * 10 : (i+1) * 10, j] = words
+#     return table
