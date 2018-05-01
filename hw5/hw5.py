@@ -6,8 +6,10 @@ from numpy import linalg
 from scipy import sparse
 
 import pandas as pd
-from IPython.display import display
-
+from IPython.display import display, HTML
+import dominate
+from dominate.tags import *
+from dominate.util import raw
 
 def read_scores_file(data_dir='./hw5/hw5-data'):
     scores = pd.read_csv(os.path.join(data_dir, 'CFB2017_scores.csv'), header=None)
@@ -57,7 +59,7 @@ def top_teams(teams, w, top=25):
 
 
 def make_report_columns(checkpoints):
-    return pd.MultiIndex.from_tuples([("t={}".format(i), l) for i in checkpoints for l in ['teams', 'p']])
+    return pd.MultiIndex.from_tuples([("t={}".format(i), l) for i in checkpoints for l in ['team', 'prop']])
 
 
 def markov_chain_experiment():
@@ -73,7 +75,7 @@ def markov_chain_experiment():
     for t in range(1, max_iterations+1):
         w = w @ M
         assert np.allclose(np.sum(w), 1.0)
-        norm_p1_trend[t-1] = linalg.norm(w - w_infinity, ord=1)
+        norm_p1_trend[t-1] = linalg.norm(w - w_infinity, axis=1, ord=1)
         if t in checkpoints:
             checkpoint_index = checkpoints.index(t)
             check_teams, check_w = top_teams(teams, w, top=25)
@@ -89,8 +91,11 @@ def problem_1_a(experiment):
 
 
 def problem_1_b(experiment):
+    plt.figure(figsize=(12,3))
     plt.plot(experiment['norm_p1_trend'])
-
+    plt.title("Convergence of $w_t$ to $w_{\infty}$")
+    plt.xlabel("Iteration $t$")
+    plt.ylabel("$||w_t-w_{\infty}||_1$")
 
 
 # ************************** PROBLEM 1 (Non-negative Matrix Factorization) ******************
@@ -109,11 +114,10 @@ def load_word_frequency_matrix(data_dir='./hw5/hw5-data'):
 
 
 def divergence_objective(X, W, H):
-    iidx, jidx, x = X.row, X.col, X.data
-    wh = W @ H
-    # print(x.shape, wh[iidx,jidx].shape)
-    # print(x[:5], wh[iidx,jidx][:5])
-    return np.sum(x*np.log(1/wh[iidx,jidx]) + wh[iidx,jidx])
+    x_i, x_j, x_value = X.row, X.col, X.data
+    WH = W @ H
+    assert x_value.shape == WH[x_i, x_j].shape
+    return np.sum(x_value * np.log(1 / WH[x_i, x_j]) + WH[x_i, x_j])
 
 
 def h_update(X, W, H):
@@ -142,19 +146,22 @@ def nonnegative_matrix_factorization(X, rank, iterations):
         H = h_update(X, W, H)
         W = w_update(X, W, H)
         objectives[iteration] = divergence_objective(X, W, H)
-        # print(objectives[iteration])
     W, H = normalize_w_h(W, H)
     return W, H, objectives
 
 
-def top_words_in_topics(W, vocab, top):
+def top_words(W, vocab, top):
     """
-    :param W:
-    :param top:
-    :return: (topics, word)
+    :param W: (word_idx, topics) matrix
+    :param vocab: list of words
+    :param top: number of top words to return
+    :return: words: (#topics, top) str, weights: (#topics, top) float
     """
-    indices = np.transpose(np.flip(np.argsort(W, axis=0), axis=0)[:top, :])
-    return np.array(vocab)[indices]
+    word_idx = np.flip(np.argsort(W, axis=0), axis=0)[:top, :]
+    words = np.array(vocab)[word_idx]
+    weights = np.flip(np.sort(W, axis=0), axis=0)[:top, :]
+    # print(word_idx.shape, words.shape, weights.shape)
+    return np.transpose(words), np.transpose(weights)
 
 
 def nmf_experiment():
@@ -164,24 +171,43 @@ def nmf_experiment():
 
 
 def problem_2_a(X, vocab, W, H, objectives):
-    plt.plot(objectives)
+    plt.figure(figsize=(12,3))
+    plt.plot(np.arange(1, len(objectives)+1), objectives)
+    plt.title("Divergence training objective")
+    plt.xlabel("Iteration $t$")
+    plt.ylabel("$D ( X \| W H )$")
+
+
+def html_report(cells, word_count, words, weights):
+    doc = dominate.document()
+    with doc.head:
+        with style():
+            raw(""".table { width: 100%; display: flex; flex-wrap: wrap; }""")
+            raw(""".cell { width: 19%; border: 1px black solid; padding: 1em; box-sizing: border-box; }""")
+            raw(""".word { display: flex; justify-content: space-between; }""")
+    with doc:
+        with div(cls='table'):
+            for i in range(cells):
+                with div(cls='cell'):
+                    for w in range(word_count):
+                        with div(cls='word'):
+                            span(words[i, w])
+                            span('{:.5f}'.format(weights[i,w]))
+    return doc.render(pretty=False)
 
 
 def problem_2_b(X, vocab, W, H, objectives):
     pd.set_option('display.max_colwidth', 1000)
-    topic_words = top_words_in_topics(W, vocab, top=10)
-    table = pd.DataFrame(columns=np.arange(1, 6), index=np.arange(1, 6))
-    for i in range(5):
-        for j in range(5):
-            words = topic_words[i * 5 + j, :]
-            table.iloc[i,j] = ' '.join(words)
-    return table
+    words, weights = top_words(W, vocab, top=10)
+    markup = html_report(25, 10, words, weights)
+    # print(markup)
+    display(HTML(markup))
 
-# def problem_2_b(X, vocab, W, H, objectives):
-#     topic_words = top_words_in_topics(W, vocab, top=10)
-#     table = pd.DataFrame(columns=np.arange(5), index=pd.MultiIndex.from_tuples([(i, j) for i in range(5) for j in range(10)]))
-#     for i in range(5):
-#         for j in range(5):
-#             words = topic_words[i * 5 + j, :]
-#             table.iloc[i * 10 : (i+1) * 10, j] = words
-#     return table
+    # join = lambda a: ''.join(a)
+    # table_cell = lambda i,j: f"""<td align='center'>{ '<br/>'.join(topic_words[i * 5 + j, :])}</td>"""
+    # table_row = lambda i: f"""<tr>{ join([table_cell(i,j) for j in range(5)]) }</tr>"""
+    # markup = f"""<table border='1' cellpadding='10px'>{(
+    #     join([table_row(i) for i in range(5)])
+    # )}</table>"""
+
+
