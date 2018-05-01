@@ -160,7 +160,6 @@ def top_words(W, vocab, top):
     word_idx = np.flip(np.argsort(W, axis=0), axis=0)[:top, :]
     words = np.array(vocab)[word_idx]
     weights = np.flip(np.sort(W, axis=0), axis=0)[:top, :]
-    # print(word_idx.shape, words.shape, weights.shape)
     return np.transpose(words), np.transpose(weights)
 
 
@@ -182,32 +181,23 @@ def html_report(cells, word_count, words, weights):
     doc = dominate.document()
     with doc.head:
         with style():
-            raw(""".table { width: 100%; display: flex; flex-wrap: wrap; }""")
-            raw(""".cell { width: 19%; border: 1px black solid; padding: 1em; box-sizing: border-box; }""")
-            raw(""".word { display: flex; justify-content: space-between; }""")
+            raw(""".report-table { width: 100%; display: flex; flex-wrap: wrap; font-size: smaller; }""")
+            raw(""".report-cell { width: 19%; padding: 5px 1em; box-sizing: border-box; border: 1px black solid; line-height: 1.6; }""")
+            raw(""".report-word { display: flex; justify-content: space-between; }""")
     with doc:
-        with div(cls='table'):
+        with div(cls='report-table'):
             for i in range(cells):
-                with div(cls='cell'):
+                with div(cls='report-cell'):
                     for w in range(word_count):
-                        with div(cls='word'):
+                        with div(cls='report-word'):
                             span(words[i, w])
-                            span('{:.5f}'.format(weights[i,w]))
+                            span('{:.3f}'.format(weights[i,w]))
     return doc.render(pretty=False)
 
 
 def problem_2_b(X, vocab, W, H, objectives):
-    pd.set_option('display.max_colwidth', 1000)
     words, weights = top_words(W, vocab, top=10)
     markup = html_report(25, 10, words, weights)
-    # print(markup)
     display(HTML(markup))
-
-    # join = lambda a: ''.join(a)
-    # table_cell = lambda i,j: f"""<td align='center'>{ '<br/>'.join(topic_words[i * 5 + j, :])}</td>"""
-    # table_row = lambda i: f"""<tr>{ join([table_cell(i,j) for j in range(5)]) }</tr>"""
-    # markup = f"""<table border='1' cellpadding='10px'>{(
-    #     join([table_row(i) for i in range(5)])
-    # )}</table>"""
 
 
